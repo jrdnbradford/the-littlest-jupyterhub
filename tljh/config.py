@@ -191,15 +191,15 @@ def set_config_value(config_path, key_path, value, validate=True):
     """
     Set key at key_path in config_path to value
     """
-    # FIXME: Have a file lock here
-    try:
-        with open(config_path) as f:
-            config = yaml.load(f)
-    except FileNotFoundError:
-        config = {}
-    config = set_item_in_config(config, key_path, value)
+    with create_config_lock(config_path):
+        try:
+            with open(config_path) as f:
+                config = yaml.load(f)
+        except FileNotFoundError:
+            config = {}
 
-    validate_config(config, validate)
+        config = set_item_in_config(config, key_path, value)
+        validate_config(config, validate)
 
     with open(config_path, "w") as f:
         yaml.dump(config, f)
@@ -209,15 +209,15 @@ def unset_config_value(config_path, key_path, validate=True):
     """
     Unset key at key_path in config_path
     """
-    # FIXME: Have a file lock here
-    try:
-        with open(config_path) as f:
-            config = yaml.load(f)
-    except FileNotFoundError:
-        config = {}
+    with create_config_lock(config_path):
+        try:
+            with open(config_path) as f:
+                config = yaml.load(f)
+        except FileNotFoundError:
+            config = {}
 
-    config = unset_item_from_config(config, key_path)
-    validate_config(config, validate)
+        config = unset_item_from_config(config, key_path)
+        validate_config(config, validate)
 
     with open(config_path, "w") as f:
         yaml.dump(config, f)
@@ -227,15 +227,15 @@ def add_config_value(config_path, key_path, value, validate=True):
     """
     Add value to list at key_path
     """
-    # FIXME: Have a file lock here
-    try:
-        with open(config_path) as f:
-            config = yaml.load(f)
-    except FileNotFoundError:
-        config = {}
+    with create_config_lock(config_path):
+        try:
+            with open(config_path) as f:
+                config = yaml.load(f)
+        except FileNotFoundError:
+            config = {}
 
-    config = add_item_to_config(config, key_path, value)
-    validate_config(config, validate)
+        config = add_item_to_config(config, key_path, value)
+        validate_config(config, validate)
 
     with open(config_path, "w") as f:
         yaml.dump(config, f)
@@ -245,18 +245,36 @@ def remove_config_value(config_path, key_path, value, validate=True):
     """
     Remove value from list at key_path
     """
-    # FIXME: Have a file lock here
-    try:
-        with open(config_path) as f:
-            config = yaml.load(f)
-    except FileNotFoundError:
-        config = {}
+    with create_config_lock(config_path):
+        try:
+            with open(config_path) as f:
+                config = yaml.load(f)
+        except FileNotFoundError:
+            config = {}
 
-    config = remove_item_from_config(config, key_path, value)
-    validate_config(config, validate)
+        config = remove_item_from_config(config, key_path, value)
+        validate_config(config, validate)
 
     with open(config_path, "w") as f:
         yaml.dump(config, f)
+
+
+def create_config_lock(config_path):
+    """
+    Creates a lockfile for the config file to ensure atomic operations
+    """
+    from filelock import FileLock, Timeout
+
+    lock_path = f"{config_path}.lock"
+
+    try:
+        lock = FileLock(lock_path).acquire(timeout=1)
+        return lock
+    except Timeout:
+        print(
+            f"Another instance of tljh-config currently holds the lock at {lock_path}"
+        )
+        exit(1)
 
 
 def check_hub_ready():
