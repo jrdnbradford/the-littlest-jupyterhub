@@ -20,8 +20,11 @@ import time
 from collections.abc import Mapping, Sequence
 from copy import deepcopy
 
+import jsonschema
 import requests
+from filelock import FileLock, Timeout
 
+from .config_schema import config_schema
 from .yaml import yaml
 
 INSTALL_PREFIX = os.environ.get("TLJH_INSTALL_PREFIX", "/opt/tljh")
@@ -32,249 +35,204 @@ CONFIG_DIR = os.path.join(INSTALL_PREFIX, "config")
 CONFIG_FILE = os.path.join(CONFIG_DIR, "config.yaml")
 
 
-def set_item_in_config(config, property_path, value):
-    """
-    Set key at property_path to value in config & return new config.
+class ConfigManager:
+    def __init__(self, config_path):
+        self.config_path = config_path
 
-    config is not mutated.
+        try:
+            with open(self.config_path) as f:
+                self.config = yaml.load(f)
+        except FileNotFoundError:
+            self.config = {}
 
-    property_path is a series of dot separated values. Any part of the path
-    that does not exist is created.
-    """
-    path_components = property_path.split(".")
+    def _update_config(self, update_function, key_path, value=None, validate=True):
+        lock_path = f"{self.config_path}.lock"
+        lock = FileLock(lock_path)
+        try:
+            with lock.acquire(timeout=1):
+                try:
+                    with open(self.config_path) as f:
+                        current_config = yaml.load(f)
+                except FileNotFoundError:
+                    current_config = {}
+                new_config = update_function(current_config, key_path, value)
+                self._validate_config(new_config, validate)
 
-    # Mutate a copy of the config, not config itself
-    cur_part = config_copy = deepcopy(config)
-    for i, cur_path in enumerate(path_components):
-        cur_path = path_components[i]
-        if i == len(path_components) - 1:
-            # Final component
-            cur_part[cur_path] = value
-        else:
-            # If we are asked to create new non-leaf nodes, we will always make them dicts
-            # This means setting is *destructive* - will replace whatever is down there!
-            if cur_path not in cur_part or not _is_dict(cur_part[cur_path]):
-                cur_part[cur_path] = {}
-            cur_part = cur_part[cur_path]
+                with open(self.config_path, "w") as f:
+                    yaml.dump(new_config, f)
+        except Timeout:
+            print(f"Another instance of tljh-config currently has {lock_path}")
+            exit(1)
 
-    return config_copy
-
-
-def unset_item_from_config(config, property_path):
-    """
-    Unset key at property_path in config & return new config.
-
-    config is not mutated.
-
-    property_path is a series of dot separated values.
-    """
-    path_components = property_path.split(".")
-
-    # Mutate a copy of the config, not config itself
-    cur_part = config_copy = deepcopy(config)
-
-    def remove_empty_configs(configuration, path):
+    def set_config_value(self, key_path, value, validate=True):
         """
-        Delete the keys that hold an empty dict.
-
-        This might happen when we delete a config property
-        that has no siblings from a multi-level config.
+        Set key at key_path in config to value.
         """
-        if not path:
-            return configuration
-        conf_iter = configuration
-        for cur_path in path:
-            if conf_iter[cur_path] == {}:
-                del conf_iter[cur_path]
-                remove_empty_configs(configuration, path[:-1])
+        self._update_config(self._set_item_in_config, key_path, value, validate)
+
+    def unset_config_value(self, key_path, validate=True):
+        """
+        Unset key at key_path in config.
+        """
+        self._update_config(self._unset_item_from_config, key_path, validate)
+
+    def add_config_value(self, key_path, value, validate=True):
+        """
+        Add value to key at key_path.
+        """
+        self._update_config(self._add_item_to_config, key_path, value, validate)
+
+    def remove_config_value(self, key_path, value, validate=True):
+        """
+        Remove value from key at key_path.
+        """
+        self._update_config(self._remove_item_from_config, key_path, value, validate)
+
+    def show_config(self):
+        """
+        Pretty print config from given config_path
+        """
+        try:
+            with open(self.config_path) as f:
+                config = yaml.load(f)
+        except FileNotFoundError:
+            config = {}
+
+        yaml.dump(config, sys.stdout)
+
+    def _validate_config(self, new_config, validate):
+        """
+        Validate changes to the config with tljh-config against the schema
+        """
+
+        try:
+            jsonschema.validate(instance=new_config, schema=config_schema)
+        except jsonschema.exceptions.ValidationError as e:
+            if validate:
+                print(
+                    f"Config validation error: {e.message}.\n"
+                    "You can still apply this change without validation by re-running your command with the --no-validate flag.\n"
+                    "If you think this validation error is incorrect, please report it to https://github.com/jupyterhub/the-littlest-jupyterhub/issues."
+                )
+                exit()
+
+    def _set_item_in_config(self, config_obj, property_path, value):
+        """
+        Set key at property_path to value in config & return new config.
+
+        config is not mutated.
+
+        property_path is a series of dot separated values. Any part of the path
+        that does not exist is created.
+        """
+        path_components = property_path.split(".")
+
+        # Mutate a copy of the config, not config itself
+        cur_part = config_copy = deepcopy(self.config)
+        for i, cur_path in enumerate(path_components):
+            cur_path = path_components[i]
+            if i == len(path_components) - 1:
+                # Final component
+                cur_part[cur_path] = value
             else:
-                conf_iter = conf_iter[cur_path]
+                # If we are asked to create new non-leaf nodes, we will always make them dicts
+                # This means setting is *destructive* - will replace whatever is down there!
+                if cur_path not in cur_part or not _is_dict(cur_part[cur_path]):
+                    cur_part[cur_path] = {}
+                cur_part = cur_part[cur_path]
 
-    for i, cur_path in enumerate(path_components):
-        if i == len(path_components) - 1:
-            if cur_path not in cur_part:
-                raise ValueError(f"{property_path} does not exist in config!")
-            del cur_part[cur_path]
-            remove_empty_configs(config_copy, path_components[:-1])
-            break
-        else:
-            if cur_path not in cur_part:
-                raise ValueError(f"{property_path} does not exist in config!")
-            cur_part = cur_part[cur_path]
+        return config_copy
 
-    return config_copy
+    def _unset_item_from_config(self, config_obj, property_path, value=None):
+        """
+        Unset key at property_path in config & return new config.
 
+        config is not mutated.
 
-def add_item_to_config(config, property_path, value):
-    """
-    Add an item to a list in config.
-    """
-    path_components = property_path.split(".")
+        property_path is a series of dot separated values.
+        """
+        path_components = property_path.split(".")
 
-    # Mutate a copy of the config, not config itself
-    cur_part = config_copy = deepcopy(config)
-    for i, cur_path in enumerate(path_components):
-        if i == len(path_components) - 1:
-            # Final component, it must be a list and we append to it
-            if cur_path not in cur_part or not _is_list(cur_part[cur_path]):
-                cur_part[cur_path] = []
-            cur_part = cur_part[cur_path]
+        # Mutate a copy of the config, not config itself
+        cur_part = config_copy = deepcopy(self.config)
 
-            cur_part.append(value)
-        else:
-            # If we are asked to create new non-leaf nodes, we will always make them dicts
-            # This means setting is *destructive* - will replace whatever is down there!
-            if cur_path not in cur_part or not _is_dict(cur_part[cur_path]):
-                cur_part[cur_path] = {}
-            cur_part = cur_part[cur_path]
+        def remove_empty_configs(configuration, path):
+            """
+            Delete the keys that hold an empty dict.
 
-    return config_copy
+            This might happen when we delete a config property
+            that has no siblings from a multi-level config.
+            """
+            if not path:
+                return configuration
+            conf_iter = configuration
+            for cur_path in path:
+                if conf_iter[cur_path] == {}:
+                    del conf_iter[cur_path]
+                    remove_empty_configs(configuration, path[:-1])
+                else:
+                    conf_iter = conf_iter[cur_path]
 
+        for i, cur_path in enumerate(path_components):
+            if i == len(path_components) - 1:
+                if cur_path not in cur_part:
+                    raise ValueError(f"{property_path} does not exist in config!")
+                del cur_part[cur_path]
+                remove_empty_configs(config_copy, path_components[:-1])
+                break
+            else:
+                if cur_path not in cur_part:
+                    raise ValueError(f"{property_path} does not exist in config!")
+                cur_part = cur_part[cur_path]
 
-def remove_item_from_config(config, property_path, value):
-    """
-    Remove an item from a list in config.
-    """
-    path_components = property_path.split(".")
+        return config_copy
 
-    # Mutate a copy of the config, not config itself
-    cur_part = config_copy = deepcopy(config)
-    for i, cur_path in enumerate(path_components):
-        if i == len(path_components) - 1:
-            # Final component, it must be a list and we delete from it
-            if cur_path not in cur_part or not _is_list(cur_part[cur_path]):
-                raise ValueError(f"{property_path} is not a list")
-            cur_part = cur_part[cur_path]
-            cur_part.remove(value)
-        else:
-            if cur_path not in cur_part or not _is_dict(cur_part[cur_path]):
-                raise ValueError(f"{property_path} does not exist in config!")
-            cur_part = cur_part[cur_path]
+    def _add_item_to_config(self, config_obj, property_path, value):
+        """
+        Add an item to a list in config.
+        """
+        path_components = property_path.split(".")
 
-    return config_copy
+        # Mutate a copy of the config, not config itself
+        cur_part = config_copy = deepcopy(self.config)
+        for i, cur_path in enumerate(path_components):
+            if i == len(path_components) - 1:
+                # Final component, it must be a list and we append to it
+                if cur_path not in cur_part or not _is_list(cur_part[cur_path]):
+                    cur_part[cur_path] = []
+                cur_part = cur_part[cur_path]
 
+                cur_part.append(value)
+            else:
+                # If we are asked to create new non-leaf nodes, we will always make them dicts
+                # This means setting is *destructive* - will replace whatever is down there!
+                if cur_path not in cur_part or not _is_dict(cur_part[cur_path]):
+                    cur_part[cur_path] = {}
+                cur_part = cur_part[cur_path]
 
-def validate_config(config, validate):
-    """
-    Validate changes to the config with tljh-config against the schema
-    """
-    import jsonschema
+        return config_copy
 
-    from .config_schema import config_schema
+    def _remove_item_from_config(self, config_obj, property_path, value):
+        """
+        Remove an item from a list in config.
+        """
+        path_components = property_path.split(".")
 
-    try:
-        jsonschema.validate(instance=config, schema=config_schema)
-    except jsonschema.exceptions.ValidationError as e:
-        if validate:
-            print(
-                f"Config validation error: {e.message}.\n"
-                "You can still apply this change without validation by re-running your command with the --no-validate flag.\n"
-                "If you think this validation error is incorrect, please report it to https://github.com/jupyterhub/the-littlest-jupyterhub/issues."
-            )
-            exit()
+        # Mutate a copy of the config, not config itself
+        cur_part = config_copy = deepcopy(self.config)
+        for i, cur_path in enumerate(path_components):
+            if i == len(path_components) - 1:
+                # Final component, it must be a list and we delete from it
+                if cur_path not in cur_part or not _is_list(cur_part[cur_path]):
+                    raise ValueError(f"{property_path} is not a list")
+                cur_part = cur_part[cur_path]
+                cur_part.remove(value)
+            else:
+                if cur_path not in cur_part or not _is_dict(cur_part[cur_path]):
+                    raise ValueError(f"{property_path} does not exist in config!")
+                cur_part = cur_part[cur_path]
 
-
-def show_config(config_path):
-    """
-    Pretty print config from given config_path
-    """
-    try:
-        with open(config_path) as f:
-            config = yaml.load(f)
-    except FileNotFoundError:
-        config = {}
-
-    yaml.dump(config, sys.stdout)
-
-
-def set_config_value(config_path, key_path, value, validate=True):
-    """
-    Set key at key_path in config_path to value
-    """
-    with create_config_lock(config_path):
-        try:
-            with open(config_path) as f:
-                config = yaml.load(f)
-        except FileNotFoundError:
-            config = {}
-
-        config = set_item_in_config(config, key_path, value)
-        validate_config(config, validate)
-
-    with open(config_path, "w") as f:
-        yaml.dump(config, f)
-
-
-def unset_config_value(config_path, key_path, validate=True):
-    """
-    Unset key at key_path in config_path
-    """
-    with create_config_lock(config_path):
-        try:
-            with open(config_path) as f:
-                config = yaml.load(f)
-        except FileNotFoundError:
-            config = {}
-
-        config = unset_item_from_config(config, key_path)
-        validate_config(config, validate)
-
-    with open(config_path, "w") as f:
-        yaml.dump(config, f)
-
-
-def add_config_value(config_path, key_path, value, validate=True):
-    """
-    Add value to list at key_path
-    """
-    with create_config_lock(config_path):
-        try:
-            with open(config_path) as f:
-                config = yaml.load(f)
-        except FileNotFoundError:
-            config = {}
-
-        config = add_item_to_config(config, key_path, value)
-        validate_config(config, validate)
-
-    with open(config_path, "w") as f:
-        yaml.dump(config, f)
-
-
-def remove_config_value(config_path, key_path, value, validate=True):
-    """
-    Remove value from list at key_path
-    """
-    with create_config_lock(config_path):
-        try:
-            with open(config_path) as f:
-                config = yaml.load(f)
-        except FileNotFoundError:
-            config = {}
-
-        config = remove_item_from_config(config, key_path, value)
-        validate_config(config, validate)
-
-    with open(config_path, "w") as f:
-        yaml.dump(config, f)
-
-
-def create_config_lock(config_path):
-    """
-    Creates a lockfile for the config file to ensure atomic operations
-    """
-    from filelock import FileLock, Timeout
-
-    lock_path = f"{config_path}.lock"
-
-    try:
-        lock = FileLock(lock_path).acquire(timeout=1)
-        return lock
-    except Timeout:
-        print(
-            f"Another instance of tljh-config currently holds the lock at {lock_path}"
-        )
-        exit(1)
+        return config_copy
 
 
 def check_hub_ready():
@@ -430,21 +388,18 @@ def main(argv=None):
 
     args = argparser.parse_args(argv)
 
+    config = ConfigManager(args.config_path)
     if args.action == "show":
-        show_config(args.config_path)
+        config.show_config()
     elif args.action == "set":
-        set_config_value(
-            args.config_path, args.key_path, parse_value(args.value), args.validate
-        )
+        config.set_config_value(args.key_path, parse_value(args.value), args.validate)
     elif args.action == "unset":
-        unset_config_value(args.config_path, args.key_path, args.validate)
+        config.unset_config_value(args.key_path, args.validate)
     elif args.action == "add-item":
-        add_config_value(
-            args.config_path, args.key_path, parse_value(args.value), args.validate
-        )
+        config.add_config_value(args.key_path, parse_value(args.value), args.validate)
     elif args.action == "remove-item":
-        remove_config_value(
-            args.config_path, args.key_path, parse_value(args.value), args.validate
+        config.remove_config_value(
+            args.key_path, parse_value(args.value), args.validate
         )
     elif args.action == "reload":
         reload_component(args.component)
