@@ -21,7 +21,6 @@ from collections.abc import Mapping, Sequence
 from copy import deepcopy
 
 import requests
-from filelock import FileLock, Timeout
 
 from .yaml import yaml
 
@@ -187,6 +186,8 @@ def set_config_value(config_path, key_path, value, validate=True):
     """
     Set key at key_path in config_path to value
     """
+    from filelock import FileLock, Timeout
+
     lock_file = f"{config_path}.lock"
     lock = FileLock(lock_file)
     try:
@@ -207,6 +208,8 @@ def unset_config_value(config_path, key_path, validate=True):
     """
     Unset key at key_path in config_path
     """
+    from filelock import FileLock, Timeout
+
     lock_file = f"{config_path}.lock"
     lock = FileLock(lock_file)
     try:
@@ -227,6 +230,8 @@ def add_config_value(config_path, key_path, value, validate=True):
     """
     Add value to list at key_path
     """
+    from filelock import FileLock, Timeout
+
     lock_file = f"{config_path}.lock"
     lock = FileLock(lock_file)
     try:
@@ -247,6 +252,8 @@ def remove_config_value(config_path, key_path, value, validate=True):
     """
     Remove value from list at key_path
     """
+    from filelock import FileLock, Timeout
+
     lock_file = f"{config_path}.lock"
     lock = FileLock(lock_file)
     try:
