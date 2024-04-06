@@ -27,4 +27,4 @@ jupyterhub-idle-culler>=1.2.1,<2
 #
 pycurl>=7.45.2,<8
 
-filelock>=3.13.3,<4
+filelock
