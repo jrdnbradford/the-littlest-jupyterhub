@@ -7,7 +7,7 @@ Validation occurs when changing values with tljh-config.
 config_schema = {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "title": "Littlest JupyterHub YAML config file",
-    "definitions": {
+    "deftions": {
         "BaseURL": {
             "type": "string",
         },
