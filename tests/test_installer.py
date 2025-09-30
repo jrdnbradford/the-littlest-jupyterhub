@@ -185,6 +185,65 @@ def test_ensure_user_environment(
     canary_package = "types-backports_abc"
     if distro:
         setup_conda(distro, distro_version, user_env_prefix)
+
+        # Debug: check conda installation
+        print(f"\n{'='*60}")
+        print(f"DEBUG: After setup_conda({distro}, {distro_version})")
+        print(f"{'='*60}")
+        print(f"user_env_prefix: {user_env_prefix}")
+        print(f"Directory exists: {user_env_prefix.exists()}")
+
+        if user_env_prefix.exists():
+            print(f"Directory is empty: {not list(user_env_prefix.iterdir())}")
+            print("\nDirectory contents (top level):")
+            try:
+                for item in sorted(user_env_prefix.iterdir())[:10]:  # First 10 items
+                    print(f"  {item.name} ({'dir' if item.is_dir() else 'file'})")
+            except Exception as e:
+                print(f"  Error listing directory: {e}")
+
+            # Check bin directory
+            bin_dir = user_env_prefix / "bin"
+            print(f"\nbin/ directory exists: {bin_dir.exists()}")
+            if bin_dir.exists():
+                print("bin/ contents:")
+                try:
+                    bin_contents = list(bin_dir.iterdir())
+                    print(f"  Total items: {len(bin_contents)}")
+                    # Show first 10 files
+                    for item in sorted(bin_contents)[:10]:
+                        print(f"    {item.name}")
+                except Exception as e:
+                    print(f"  Error listing bin/: {e}")
+
+            # Check conda binary specifically
+            conda_bin = user_env_prefix / "bin" / "conda"
+            print(f"\nconda binary exists: {conda_bin.exists()}")
+            if conda_bin.exists():
+                print(f"conda binary is file: {conda_bin.is_file()}")
+                print(f"conda binary is symlink: {conda_bin.is_symlink()}")
+                print(f"conda binary is executable: {os.access(conda_bin, os.X_OK)}")
+                print(
+                    f"conda binary size: {conda_bin.stat().st_size if conda_bin.exists() else 'N/A'}"
+                )
+
+                # Try to run conda --version
+                try:
+                    result = run(
+                        [str(conda_bin), "--version"],
+                        capture_output=True,
+                        text=True,
+                        timeout=5,
+                    )
+                    print(f"conda --version returncode: {result.returncode}")
+                    print(f"conda --version stdout: {result.stdout.strip()}")
+                    if result.stderr:
+                        print(f"conda --version stderr: {result.stderr.strip()}")
+                except Exception as e:
+                    print(f"Error running conda --version: {e}")
+
+        print(f"{'='*60}\n")
+
         # install a noarch: python package that won't be used otherwise
         # should depend on Python, so it will interact with possible upgrades
         pkgs = [canary_package]
