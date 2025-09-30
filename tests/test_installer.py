@@ -242,6 +242,25 @@ def test_ensure_user_environment(
                 except Exception as e:
                     print(f"Error running conda --version: {e}")
 
+                try:
+                    result = run(
+                        [str(conda_bin), "list", "--json"],
+                        capture_output=True,
+                        text=True,
+                        timeout=10,
+                    )
+                    print(f"conda list --json returncode: {result.returncode}")
+                    if result.returncode == 0:
+                        packages = json.loads(result.stdout)
+                        print(f"Number of packages found: {len(packages)}")
+                        # Show first few package names
+                        for pkg in packages[:5]:
+                            print(f"  - {pkg['name']}: {pkg['version']}")
+                    else:
+                        print(f"conda list --json stderr: {result.stderr.strip()}")
+                except Exception as e:
+                    print(f"Error running conda list --json: {e}")
+
         print(f"{'='*60}\n")
 
         # install a noarch: python package that won't be used otherwise
