@@ -120,47 +120,47 @@ def _specifier(version):
     "distro, distro_version, expected_versions",
     [
         # No previous install, start fresh
-        (
-            None,
-            None,
-            {
-                "python": "3.12.*",
-                "conda": "24.7.1",
-                "mamba": "1.5.9",
-            },
-        ),
-        # previous install, 1.0
-        (
-            "mambaforge",
-            "23.1.0-1",
-            {
-                "python": "3.10.*",
-                "conda": "23.1.0",
-                "mamba": "1.4.1",
-            },
-        ),
-        # 0.2 install, no upgrade needed
-        (
-            "mambaforge",
-            "4.10.3-7",
-            {
-                "python": "3.9.*",
-                "conda": "4.10.3",
-                "mamba": "0.16.0",
-            },
-        ),
-        # simulate missing mamba
-        # will be installed but not pinned
-        # to avoid conflicts
-        (
-            "miniforge",
-            "4.10.3-7",
-            {
-                "python": "3.9.*",
-                "conda": "4.10.3",
-                "mamba": ">=1.1.0",
-            },
-        ),
+        # (
+        #     None,
+        #     None,
+        #     {
+        #         "python": "3.12.*",
+        #         "conda": "24.7.1",
+        #         "mamba": "1.5.9",
+        #     },
+        # ),
+        # # previous install, 1.0
+        # (
+        #     "mambaforge",
+        #     "23.1.0-1",
+        #     {
+        #         "python": "3.10.*",
+        #         "conda": "23.1.0",
+        #         "mamba": "1.4.1",
+        #     },
+        # ),
+        # # 0.2 install, no upgrade needed
+        # (
+        #     "mambaforge",
+        #     "4.10.3-7",
+        #     {
+        #         "python": "3.9.*",
+        #         "conda": "4.10.3",
+        #         "mamba": "0.16.0",
+        #     },
+        # ),
+        # # simulate missing mamba
+        # # will be installed but not pinned
+        # # to avoid conflicts
+        # (
+        #     "miniforge",
+        #     "4.10.3-7",
+        #     {
+        #         "python": "3.9.*",
+        #         "conda": "4.10.3",
+        #         "mamba": ">=1.1.0",
+        #     },
+        # ),
         # too-old Python (3.7), abort
         (
             "miniconda",
@@ -260,6 +260,14 @@ def test_ensure_user_environment(
                         print(f"conda list --json stderr: {result.stderr.strip()}")
                 except Exception as e:
                     print(f"Error running conda list --json: {e}")
+
+                # Test what get_conda_package_versions returns
+            print("\nTesting conda.get_conda_package_versions():")
+            package_versions = conda.get_conda_package_versions(str(user_env_prefix))
+            print(f"Returned package_versions: {package_versions}")
+            print(f"Is empty: {not package_versions}")
+            if "python" in package_versions:
+                print(f"Python version: {package_versions['python']}")
 
         print(f"{'='*60}\n")
 

@@ -37,7 +37,43 @@ def get_conda_package_versions(prefix):
             [os.path.join(prefix, "bin", "conda"), "list", "--json"],
             text=True,
         )
-    except (subprocess.CalledProcessError, FileNotFoundError):
+    except subprocess.CalledProcessError as e:
+        print(
+            f"conda list --json failed in {prefix}. Attempting fallback Python version detection. "
+            f"Error: {e.output}"
+        )
+        # --- NEW: Inline code to find libffi.so for debugging ---
+        library_name = "libffi.so"
+        print(
+            f"DEBUG: Running system 'find' for {library_name} to diagnose import error."
+        )
+        search_paths = "/usr/lib /usr/lib64 /lib /lib64 /opt"
+        # The command: find <paths> -name "<library_name>*" 2>/dev/null
+        cmd = [
+            "/usr/bin/find",
+            *search_paths.split(),
+            "-name",
+            f"{library_name}*",
+            "-print",
+        ]
+
+        try:
+            # subprocess.run is used here, capturing and discarding potential permission errors on stderr
+            result = subprocess.run(
+                cmd,
+                check=False,
+                capture_output=True,  # Explicitly capture stdout
+                text=True,
+            )
+            paths = result.stdout.strip()
+            if paths:
+                # Log found paths, replacing newlines with commas for cleaner output
+                print(f"DEBUG: Found {library_name} paths: {paths}")
+            else:
+                print(f"DEBUG: {library_name} not found in common system paths.")
+        except Exception as find_e:
+            print(f"DEBUG: Could not run 'find' subprocess for libffi: {find_e}")
+        # --- END DEBUG CODE ---
         return versions
 
     packages = json.loads(out)

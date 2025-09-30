@@ -15,6 +15,7 @@ RUN apt-get update && apt-get install --yes \
     python3-pip \
     bzip2 \
     git \
+    libffi-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Create and activate virtual environment
