@@ -37,6 +37,8 @@ def get_conda_package_versions(prefix):
             [os.path.join(prefix, "bin", "conda"), "list", "--json"],
             text=True,
         )
+    except FileNotFoundError:
+        return versions
     except subprocess.CalledProcessError as e:
         print(
             f"conda list --json failed in {prefix}. Attempting fallback Python version detection. "
