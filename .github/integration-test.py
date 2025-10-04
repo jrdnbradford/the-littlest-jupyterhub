@@ -164,8 +164,19 @@ def run_test(
     # released version), and from a previous major-like version.
     #
     if upgrade_from:
-        command = f"python3 /srv/src/bootstrap/bootstrap.py --version={upgrade_from}"
-        run_command(container_name, command)
+        if upgrade_from == "0.2.0":
+            try:
+                command = (
+                    f"python3 /srv/src/bootstrap/bootstrap.py --version={upgrade_from}"
+                )
+                run_command(container_name, command)
+            except:
+                command = "/opt/tljh/hub/bin/python3 -m pip install bcrypt==4.0.0"
+                run_command(container_name, command)
+                command = (
+                    f"python3 /srv/src/bootstrap/bootstrap.py --version={upgrade_from}"
+                )
+                run_command(container_name, command)
 
         # show user environment
         command = "/opt/tljh/user/bin/mamba list"
