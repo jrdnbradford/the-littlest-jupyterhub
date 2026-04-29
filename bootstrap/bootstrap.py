@@ -228,8 +228,8 @@ def ensure_host_system_can_install_tljh():
         print(f"bootstrap.py must be run with at least Python 3.9, found {sys.version}")
         sys.exit(1)
 
-    # Require systemd (systemctl is a part of systemd)
-    if not shutil.which("systemd") or not shutil.which("systemctl"):
+    # Require systemd (some distros ship systemctl without a top-level systemd binary)
+    if not (shutil.which("systemctl") or shutil.which("systemd")):
         print("Systemd is required to run TLJH")
         # Provide additional information about running in docker containers
         if os.path.exists("/.dockerenv"):
@@ -442,7 +442,9 @@ def main():
         # package repository is disabled by default, causing bootstrapping to
         # fail. We install the software-properties-common package so we can get
         # the add-apt-repository command to make sure the universe repository is
-        # enabled, since that's where the python3-pip package lives.
+        # enabled, since that's where the python3-pip package lives. The
+        # "universe" section and software-properties-common are only relevant
+        # on Ubuntu, so we skip both on Debian.
         #
         # In Ubuntu 21.10 DEBIAN_FRONTEND has found to be needed to avoid
         # getting stuck on an input prompt during apt-get install.
@@ -450,12 +452,11 @@ def main():
         apt_get_adjusted_env = os.environ.copy()
         apt_get_adjusted_env["DEBIAN_FRONTEND"] = "noninteractive"
         run_subprocess(["apt-get", "update"])
-        run_subprocess(
-            ["apt-get", "install", "--yes", "software-properties-common"],
-            env=apt_get_adjusted_env,
-        )
-        # Section "universe" exists and is required only in ubuntu.
         if distro == "ubuntu":
+            run_subprocess(
+                ["apt-get", "install", "--yes", "software-properties-common"],
+                env=apt_get_adjusted_env,
+            )
             run_subprocess(["add-apt-repository", "universe", "--yes"])
         run_subprocess(["apt-get", "update"])
         run_subprocess(
