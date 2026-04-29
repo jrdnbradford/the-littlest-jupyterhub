@@ -4,7 +4,7 @@
 
 ## Operating System
 
-We require using Ubuntu >=20.04 as the base operating system for your server.
+We require Debian 11+ or Ubuntu 22.04+ as the base operating system for your server.
 
 ## Root access
 

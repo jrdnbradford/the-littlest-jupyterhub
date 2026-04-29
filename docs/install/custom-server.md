@@ -26,7 +26,7 @@ a server you have access to.
 ## Pre-requisites
 
 1. Some familiarity with the command line.
-2. A server running Ubuntu 20.04+ where you have root access (Ubuntu 22.04 LTS recommended).
+2. A server running Debian 11+ or Ubuntu 22.04+ where you have root access.
 3. At least **1GB** of RAM on your server.
 4. Ability to `ssh` into the server & run commands from the prompt.
 5. An **IP address** where the server can be reached from the browsers of your target audience.

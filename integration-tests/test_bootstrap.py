@@ -16,7 +16,7 @@ import subprocess
 import time
 
 GIT_REPO_PATH = os.path.abspath(os.path.dirname(os.path.dirname(__file__)))
-BASE_IMAGE = os.getenv("BASE_IMAGE", "ubuntu:20.04")
+BASE_IMAGE = os.getenv("BASE_IMAGE", "ubuntu:22.04")
 
 
 def _stop_container():
